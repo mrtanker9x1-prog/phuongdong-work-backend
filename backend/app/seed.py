@@ -242,11 +242,48 @@ def seed_database():
 
         db.commit()
 
-        # Subtasks
-        s1 = Subtask(task_id=t1.id, title="Soạn nội dung thông điệp chiến dịch", is_completed=True, order_index=1)
-        s2 = Subtask(task_id=t1.id, title="Setup chiến dịch trên Meta & Google Ads", is_completed=False, order_index=2)
-        s3 = Subtask(task_id=t1.id, title="Báo cáo số liệu CPL hàng ngày", is_completed=False, order_index=3)
-        db.add_all([s1, s2, s3])
+        # Subtasks (Quy trình các khâu liên hoàn & Nghiệm thu kết quả)
+        s1 = Subtask(
+            task_id=t1.id,
+            title="✍️ 1. Viết bài Content truyền thông & Khuyến mãi",
+            assignee_id=staff_team1.id,
+            status="DONE",
+            is_completed=True,
+            deliverable_link="https://docs.google.com/document/d/1Bao-Viet-Content-Kham-Tong-Quat",
+            deliverable_note="Đã viết xong bài 800 từ, gửi kèm 3 mẫu tiêu đề A/B Testing.",
+            order_index=1
+        )
+        s2 = Subtask(
+            task_id=t1.id,
+            title="🎨 2. Thiết kế 2 Banner vuông 1080x1080 & 1 Banner ngang 1200x628",
+            assignee_id=staff_team2.id,
+            status="IN_PROGRESS",
+            is_completed=False,
+            deliverable_link="https://drive.google.com/drive/folders/1Banner-Thiet-Ke-Phuong-Dong",
+            deliverable_note="Đã lên xong layout phác thảo, đang render file chất lượng cao.",
+            order_index=2
+        )
+        s3 = Subtask(
+            task_id=t1.id,
+            title="📊 3. Setup chiến dịch quảng cáo Facebook & Google Ads",
+            assignee_id=staff_team3.id,
+            status="TODO",
+            is_completed=False,
+            deliverable_link="",
+            deliverable_note="Chờ Designer bàn giao file ảnh hoàn chỉnh để lên camp.",
+            order_index=3
+        )
+        s4 = Subtask(
+            task_id=t1.id,
+            title="🎯 4. Theo dõi nghiệm thu số lead & Báo cáo CPL",
+            assignee_id=manager_123.id,
+            status="TODO",
+            is_completed=False,
+            deliverable_link="",
+            deliverable_note="Đánh giá hiệu quả sau 3 ngày chạy.",
+            order_index=4
+        )
+        db.add_all([s1, s2, s3, s4])
 
         # Comment
         c1 = Comment(task_id=t1.id, user_id=admin_user.id, content="Team 1 chú ý theo dõi sát chi phí quảng cáo và lượng đăng ký khám nhé!")

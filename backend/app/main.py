@@ -15,7 +15,7 @@ from .schemas import (
     ProjectOut, ProjectCreate,
     StageOut, StageCreate, StageBase,
     TaskOut, TaskCreate, TaskUpdate, TaskHandoverRequest,
-    SubtaskOut, SubtaskCreate,
+    SubtaskOut, SubtaskCreate, SubtaskUpdate,
     CommentOut, CommentCreate
 )
 from .seed import seed_database
@@ -353,7 +353,8 @@ def get_task(task_id: int, db: Session = Depends(get_db)):
 @app.post("/api/tasks", response_model=TaskOut)
 def create_task(task_in: TaskCreate, db: Session = Depends(get_db)):
     tag_ids = task_in.tag_ids
-    task_dict = task_in.dict(exclude={"tag_ids"})
+    subtasks_data = getattr(task_in, 'subtasks', []) or []
+    task_dict = task_in.dict(exclude={"tag_ids", "subtasks"})
     
     task = Task(**task_dict)
     
@@ -364,6 +365,26 @@ def create_task(task_in: TaskCreate, db: Session = Depends(get_db)):
     db.add(task)
     db.commit()
     db.refresh(task)
+
+    if subtasks_data:
+        for idx, sub_item in enumerate(subtasks_data):
+            if isinstance(sub_item, str):
+                if sub_item.strip():
+                    db.add(Subtask(task_id=task.id, title=sub_item.strip(), order_index=idx + 1))
+            elif isinstance(sub_item, dict):
+                title = sub_item.get("title", "").strip()
+                if title:
+                    db.add(Subtask(
+                        task_id=task.id,
+                        title=title,
+                        assignee_id=sub_item.get("assignee_id"),
+                        deliverable_link=sub_item.get("deliverable_link"),
+                        deliverable_note=sub_item.get("deliverable_note"),
+                        status=sub_item.get("status", "TODO"),
+                        order_index=idx + 1
+                    ))
+        db.commit()
+        db.refresh(task)
 
     act = TaskActivity(
         task_id=task.id,
@@ -514,12 +535,32 @@ def create_subtask(sub_in: SubtaskCreate, db: Session = Depends(get_db)):
     db.refresh(sub)
     return sub
 
+@app.put("/api/subtasks/{subtask_id}", response_model=SubtaskOut)
+def update_subtask(subtask_id: int, sub_in: SubtaskUpdate, db: Session = Depends(get_db)):
+    sub = db.query(Subtask).filter(Subtask.id == subtask_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subtask not found")
+    
+    update_data = sub_in.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(sub, field, value)
+        
+    if "is_completed" in update_data:
+        sub.status = "DONE" if sub.is_completed else "TODO"
+    elif "status" in update_data:
+        sub.is_completed = (sub.status == "DONE")
+        
+    db.commit()
+    db.refresh(sub)
+    return sub
+
 @app.put("/api/subtasks/{subtask_id}/toggle", response_model=SubtaskOut)
 def toggle_subtask(subtask_id: int, db: Session = Depends(get_db)):
     sub = db.query(Subtask).filter(Subtask.id == subtask_id).first()
     if not sub:
         raise HTTPException(status_code=404, detail="Subtask not found")
     sub.is_completed = not sub.is_completed
+    sub.status = "DONE" if sub.is_completed else "TODO"
     db.commit()
     db.refresh(sub)
     return sub
@@ -658,15 +699,68 @@ def get_stats_overview(
     member_kpis = []
     
     for u in all_users:
-        u_tasks = [t for t in tasks if t.direct_assignee_id == u.id]
+        # User is involved if they are direct assignee OR assigned to any subtask/step
+        u_tasks = [
+            t for t in tasks 
+            if t.direct_assignee_id == u.id or any(st.assignee_id == u.id for st in t.subtasks)
+        ]
         u_total = len(u_tasks)
-        u_done = len([t for t in u_tasks if t.status == "DONE"])
-        u_in_progress = len([t for t in u_tasks if t.status == "IN_PROGRESS"])
-        u_todo = len([t for t in u_tasks if t.status == "TODO"])
-        u_review = len([t for t in u_tasks if t.status == "REVIEW"])
-        u_overdue = len([t for t in u_tasks if t.due_date and t.due_date < now and t.status != "DONE"])
-        u_hours = sum([t.estimated_hours or 0 for t in u_tasks])
         
+        # Calculate done, in-progress, todo, overdue based on sequential workflow steps
+        u_done = 0
+        u_in_progress = 0
+        u_todo = 0
+        u_review = 0
+        u_overdue = 0
+        
+        for t in u_tasks:
+            # If task has subtasks/steps
+            if t.subtasks:
+                user_steps = [st for st in t.subtasks if st.assignee_id == u.id]
+                if user_steps:
+                    all_user_steps_done = all(st.status == "DONE" or st.is_completed for st in user_steps)
+                    if all_user_steps_done:
+                        u_done += 1
+                    else:
+                        # Find the first uncompleted step in the entire task
+                        first_uncompleted_step = next(
+                            (st for st in sorted(t.subtasks, key=lambda s: s.order_index or 0) if st.status != "DONE" and not st.is_completed),
+                            None
+                        )
+                        
+                        # Is this user responsible for the bottleneck step?
+                        if first_uncompleted_step and first_uncompleted_step.assignee_id == u.id:
+                            u_in_progress += 1
+                            # If task deadline has passed, the bottleneck person gets the overdue blame
+                            if t.due_date and t.due_date < now and t.status != "DONE":
+                                u_overdue += 1
+                        else:
+                            # User is in subsequent step waiting for previous handover -> NOT overdue, counted as waiting/todo
+                            u_todo += 1
+                else:
+                    # User is direct assignee of the whole task
+                    if t.status == "DONE":
+                        u_done += 1
+                    elif t.status == "IN_PROGRESS":
+                        u_in_progress += 1
+                    else:
+                        u_todo += 1
+                    if t.due_date and t.due_date < now and t.status != "DONE":
+                        u_overdue += 1
+            else:
+                # Standard task without subtasks
+                if t.status == "DONE":
+                    u_done += 1
+                elif t.status == "IN_PROGRESS":
+                    u_in_progress += 1
+                elif t.status == "REVIEW":
+                    u_review += 1
+                else:
+                    u_todo += 1
+                if t.due_date and t.due_date < now and t.status != "DONE":
+                    u_overdue += 1
+                    
+        u_hours = sum([t.estimated_hours or 0 for t in u_tasks])
         u_comp_rate = round((u_done / u_total * 100) if u_total > 0 else 0, 1)
         
         # Calculate KPI score out of 100

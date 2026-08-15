@@ -138,19 +138,35 @@ class ProjectOut(ProjectBase):
     class Config:
         from_attributes = True
 
-# ----------------- SUBTASK SCHEMAS -----------------
+# ----------------- SUBTASK / PIPELINE STEP SCHEMAS -----------------
 class SubtaskBase(BaseModel):
     title: str
     is_completed: Optional[bool] = False
+    status: Optional[str] = "TODO"
+    assignee_id: Optional[int] = None
+    deliverable_link: Optional[str] = None
+    deliverable_note: Optional[str] = None
+    due_date: Optional[datetime] = None
     order_index: Optional[int] = 0
 
 class SubtaskCreate(SubtaskBase):
     task_id: int
 
+class SubtaskUpdate(BaseModel):
+    title: Optional[str] = None
+    is_completed: Optional[bool] = None
+    status: Optional[str] = None
+    assignee_id: Optional[int] = None
+    deliverable_link: Optional[str] = None
+    deliverable_note: Optional[str] = None
+    due_date: Optional[datetime] = None
+    order_index: Optional[int] = None
+
 class SubtaskOut(SubtaskBase):
     id: int
     task_id: int
     created_at: datetime
+    assignee: Optional[UserOut] = None
 
     class Config:
         from_attributes = True
@@ -203,6 +219,7 @@ class TaskCreate(TaskBase):
     stage_id: int
     creator_id: Optional[int] = None
     tag_ids: Optional[List[int]] = []
+    subtasks: Optional[List[Any]] = []
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None

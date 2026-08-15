@@ -128,10 +128,16 @@ class Subtask(Base):
     task_id = Column(Integer, ForeignKey('tasks.id', ondelete='CASCADE'), nullable=False)
     title = Column(String(255), nullable=False)
     is_completed = Column(Boolean, default=False)
+    status = Column(String(50), default="TODO") # TODO, IN_PROGRESS, DONE
+    assignee_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    deliverable_link = Column(Text, nullable=True) # Link ảnh, link bài viết, Google Drive, Figma...
+    deliverable_note = Column(Text, nullable=True) # Nội dung content hoặc ghi chú nghiệm thu
+    due_date = Column(DateTime, nullable=True)
     order_index = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     task = relationship("Task", back_populates="subtasks")
+    assignee = relationship("User", foreign_keys=[assignee_id])
 
 class Comment(Base):
     __tablename__ = 'comments'
