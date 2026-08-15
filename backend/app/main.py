@@ -535,7 +535,9 @@ def create_subtask(sub_in: SubtaskCreate, db: Session = Depends(get_db)):
     db.refresh(sub)
     return sub
 
+@app.post("/api/subtasks/{subtask_id}", response_model=SubtaskOut)
 @app.put("/api/subtasks/{subtask_id}", response_model=SubtaskOut)
+@app.patch("/api/subtasks/{subtask_id}", response_model=SubtaskOut)
 def update_subtask(subtask_id: int, sub_in: SubtaskUpdate, db: Session = Depends(get_db)):
     sub = db.query(Subtask).filter(Subtask.id == subtask_id).first()
     if not sub:
@@ -545,15 +547,21 @@ def update_subtask(subtask_id: int, sub_in: SubtaskUpdate, db: Session = Depends
     for field, value in update_data.items():
         setattr(sub, field, value)
         
-    if "is_completed" in update_data:
-        sub.status = "DONE" if sub.is_completed else "TODO"
-    elif "status" in update_data:
+    if "status" in update_data and update_data["status"] is not None:
+        sub.status = update_data["status"]
         sub.is_completed = (sub.status == "DONE")
+    elif "is_completed" in update_data and update_data["is_completed"] is not None:
+        sub.is_completed = update_data["is_completed"]
+        if sub.is_completed:
+            sub.status = "DONE"
+        elif sub.status == "DONE":
+            sub.status = "TODO"
         
     db.commit()
     db.refresh(sub)
     return sub
 
+@app.post("/api/subtasks/{subtask_id}/toggle", response_model=SubtaskOut)
 @app.put("/api/subtasks/{subtask_id}/toggle", response_model=SubtaskOut)
 def toggle_subtask(subtask_id: int, db: Session = Depends(get_db)):
     sub = db.query(Subtask).filter(Subtask.id == subtask_id).first()
